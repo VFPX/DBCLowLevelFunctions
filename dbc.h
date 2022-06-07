@@ -1,6 +1,8 @@
 *!*	<pdm_sc_yes/>
 *!*	<pdm_dd_yes/>
 
+#DEFINE _DBC_CRLF  CHR(13)+CHR(10)
+
 * Type of objects
 #DEFINE _DBC_DataBase    PADR("Database",10)
 #DEFINE _DBC_Table       PADR("Table",10)
@@ -110,6 +112,7 @@
 #DEFINE _DBC_SP_CheckFXP_CantCompilePRG -3
 #DEFINE _DBC_SP_CheckFXP_CantReadFXP    -4
 #DEFINE _DBC_SP_CheckFXP_CantReadErr    -5
+
 
 
 

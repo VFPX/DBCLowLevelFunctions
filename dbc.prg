@@ -389,7 +389,7 @@ DEFINE CLASS _DBC AS SESSION && Base dbc class
                laProp(m.lii,4)=_DBC_Check_OK
             ENDIF
          ENDIF
-         liStart=m.liStart+m.m.liLen
+         liStart=m.liStart+m.liLen
       ENDDO
       RETURN m.lii
    ENDPROC
@@ -1065,8 +1065,10 @@ ENDDEFINE
 *********************************************************************************
 DEFINE CLASS _DBC_Check AS _DBC && Class for checking DBC
    Name="_DBC_Check"
+   cLogFile=""
+   hLogFile=0
 
-   PROCEDURE Check(lcAlias) && Check DBC integrity
+   PROCEDURE Check(lcAlias, m.lcFile) && Check DBC integrity
       * lcAlias - Alias of opened DBC
 
       *!*   <pdm_sc_yes/>
@@ -1080,7 +1082,12 @@ DEFINE CLASS _DBC_Check AS _DBC && Class for checking DBC
       =This.CheckPropertiesOfAllObjects(m.lcAlias,m.loInfo)
       =This.CheckSPFXP(m.lcAlias,m.loInfo)
 
-      =This.CreateLog(m.loInfo)
+      This.cLogFile=m.lcFile
+      This.hLogFile=IIF(NOT EMPTY(m.lcFile), FCREATE(m.lcFile), 0)
+      
+      =This.CreateLog(m.lcAlias,m.loInfo)
+      
+      =IIF(This.hLogFile>0, FCLOSE(This.hLogFile), .T.)
    ENDPROC
 
 
@@ -1092,7 +1099,7 @@ DEFINE CLASS _DBC_Check AS _DBC && Class for checking DBC
       *!*   <pdm_dd_yes/>
       SELECT AA.OBJECTID FROM (m.lcAlias) AA;
              WHERE NOT DELETED() AND NOT AA.PARENTID IN (SELECT AB.OBJECTID FROM (m.lcAlias) AB);
-             INTO ARRAY m.loInfo.aLostObjects
+             INTO ARRAY loInfo.aLostObjects
 
       loInfo.iLostObjects=_TALLY
       RETURN 
@@ -1106,7 +1113,7 @@ DEFINE CLASS _DBC_Check AS _DBC && Class for checking DBC
       *!*   <pdm_dd_yes/>
       SELECT AA.OBJECTID FROM (m.lcAlias) AA;
              WHERE DELETED();
-             INTO ARRAY m.loInfo.aObsoleteObjects
+             INTO ARRAY loInfo.aObsoleteObjects
 
       loInfo.iObsoleteObjects=_TALLY
       RETURN 
@@ -1218,23 +1225,87 @@ DEFINE CLASS _DBC_Check AS _DBC && Class for checking DBC
 
    ENDPROC
 
-   PROCEDURE CreateLog(loInfo) && Create output file
+   PROCEDURE CreateLog(lcAlias,loInfo) && Create output file
+      * lcAlias - Alias of opened DBC
       * loInfo - Info object
 
       *!*   <pdm_sc_yes/>
       *!*   <pdm_dd_yes/>
+      LOCAL m.lcData, m.lii, m.liy
+      
+      IF m.loInfo.iLostObjects>0
+         m.lcData="Lost objects"+_DBC_CRLF+;
+                  "================"
+         This.WriteToLog(m.lcData)
+         FOR m.lii=1 TO m.loInfo.iLostObjects  
+             SELE (m.lcAlias) && Skip to DBC 
+             LOCATE FOR ObjectID=m.loInfo.aLostObjects(m.lii) && Find object
+             m.lcData="ID: "+LTRIM(STR(OBJECTID))+", Name: "+ALLTRIM(ObjectName)+", Object type: "+ALLTRIM(ObjectType)
+             This.WriteToLog(m.lcData)
+         NEXT
+         This.WriteToLog("")
+      ENDIF 
 
-** invalid properties
-*!*              IF lii<=liCount
-*!*                 ?
-*!*                 ?ALLTRIM(OBJECTNAME)
-*!*                 FOR lii=1 TO liCount
-*!*                     IF laProp(lii,4)#_DBC_Check_OK
-*!*                        ?DBC_FormatProperty(laProp(lii,1)),laProp(lii,3),laProp(lii,4)
-*!*                     ENDIF
-*!*                 NEXT
-*!*             ENDIF
+      IF m.loInfo.iObsoleteObjects>0
+         m.lcData="Obsolete objects"+_DBC_CRLF+;
+                  "================"
+         This.WriteToLog(m.lcData)
+         FOR m.lii=1 TO m.loInfo.iObsoleteObjects  
+             SELE (m.lcAlias) && Skip to DBC 
+             LOCATE FOR ObjectID=m.loInfo.aObsoleteObjects(m.lii) && Find object
+             m.lcData="ID: "+LTRIM(STR(OBJECTID))+", Name: "+ALLTRIM(ObjectName)+", Object type: "+ALLTRIM(ObjectType)
+             This.WriteToLog(m.lcData)
+         NEXT
+         This.WriteToLog("")
+      ENDIF 
 
+      IF m.loInfo.iInvalidProperties>0
+         m.lcData="Invalid properties"+_DBC_CRLF+;
+                  "=================="
+         This.WriteToLog(m.lcData)
+         FOR m.lii=1 TO m.loInfo.iInvalidProperties
+             SELE (m.lcAlias) && Skip to DBC 
+             LOCATE FOR ObjectID=m.loInfo.aInvalidProperties(m.lii).ObjectID && Find object
+             m.lcData="ID: "+LTRIM(STR(OBJECTID))+", Name: "+ALLTRIM(ObjectName)+", Object type: "+ALLTRIM(ObjectType)+", Invalid props: "+LTRIM(STR(loInfo.aInvalidProperties(m.lii).iInvalidProperties))
+             This.WriteToLog(m.lcData)
+
+             WITH m.loInfo.aInvalidProperties(m.lii)
+             FOR m.liy=1 TO .iInvalidProperties
+                 IF .aInvalidProperties(m.liy, 4)=_DBC_Check_OK
+                    LOOP
+                 ENDIF 
+
+                 m.lcData="  Property ID: "+LTRIM(STR(.aInvalidProperties(m.liy, 1)))+_DBC_CRLF+;
+                          "  Status: "+IIF(.aInvalidProperties(m.liy, 4)=_DBC_Check_PropertyType_Unknown, "Unknown",;
+                                            IIF(.aInvalidProperties(m.liy, 4)=_DBC_Check_PropertyValue_Invalid, "Invalid", "OK"))+_DBC_CRLF+;
+                          "  Native Value: "+STRCONV(.aInvalidProperties(m.liy, 3), 15)+_DBC_CRLF+;
+                          "  VFP Value: "+TRANSFORM(.aInvalidProperties(m.liy, 2))+_DBC_CRLF
+                 This.WriteToLog(m.lcData)
+
+              NEXT
+              ENDWITH
+         NEXT
+         This.WriteToLog("")
+      ENDIF
+
+
+      m.lcData="Stored procedures"+_DBC_CRLF+;
+               "================="+_DBC_CRLF+;
+               "FXP Status: "+STR(m.loInfo.SPFXP, 2)+" - "+;
+                              IIF(m.loInfo.SPFXP=_DBC_SP_CheckFXP_OK, "OK",;
+                              IIF(m.loInfo.SPFXP=_DBC_SP_CheckFXP_Failed, "Failed",;
+                              IIF(m.loInfo.SPFXP=_DBC_SP_CheckFXP_CantSavePRG, "Can't Save PRG",;
+                              IIF(m.loInfo.SPFXP=_DBC_SP_CheckFXP_CantCompilePRG, "Can't Compile PRG",;
+                              IIF(m.loInfo.SPFXP=_DBC_SP_CheckFXP_CantReadFXP, "Can't Read FXP", "Can't read ERR file.")))))+_DBC_CRLF+;
+                "FXP Result: "+m.loInfo.SPFXPResult
+      This.WriteToLog(m.lcData)
+      This.WriteToLog("")
+
+   ENDPROC
+
+   PROCEDURE WriteToLog(lcData) && Write to log file
+      DEBUGOUT m.lcData
+      =IIF(This.hLogFile>0, FPUTS(This.hLogFile, m.lcData), .T.)
    ENDPROC
 
 ENDDEFINE

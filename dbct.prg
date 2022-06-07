@@ -119,7 +119,7 @@ liIDT=loDBC.GetIDObject(m.lcAlias,_DBC_Field,"products.product_id")
 ?m.loDBC.SetProperty(m.lcAlias,m.liIDT,MyProperty2,"G") && Failed
 
 * Run checking method
-*=loDBC.Check(lcAlias)
+=loDBC.Check(lcAlias, m.lcPath+"check.log")
 
 
 =m.loDBC.CloseTable(m.lcAlias)
